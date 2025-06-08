@@ -1,0 +1,31 @@
+#
+# SDR System Configuration
+# ──────────────────────────────────────────────────────────────
+
+# SDR driver identifier used by SoapySDR.
+# Examples: airspy, rtlsdr, etc.
+driver: 'airspy'
+
+# Frequency band to scan. This selects a predefined list of center
+# frequencies from the band_frequencies section below.
+# Valid options: hf, vhf, uhf, or a custom key defined in band_frequencies.
+band: 'vhf'
+
+# List of center frequencies in Hz for each band.
+# Each band maps to a list of center frequencies (in Hz) to scan.
+# These are used sequentially by the scanner.
+band_frequencies:
+  # 40m, 20m, 15m amateur bands.
+  hf: [7100000, 14200000, 21300000]
+  # APRS, VHF simplex.
+  vhf: [144390000, 146520000]
+  # ISM, UHF simplex.
+  uhf: [433920000, 446000000]
+
+# IQ sample rate of the SDR device in Hz.
+# Higher values provide wider bandwidth but increase CPU load and memory usage.
+iq_sample_rate: 2400000
+
+# SDR gain setting in decibels.
+# Adjust based on noise floor and dynamic range requirements.
+rf_gain_db: 40
