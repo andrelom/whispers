@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class SDRDevice:
     def __init__(self, settings: Settings):
         self.driver = settings.driver
-        self.iq_sample_rate = settings.iq_sample_rate
+        self.iq_sample_rate_hz = settings.iq_sample_rate_hz
         self.rf_gain_db = settings.rf_gain_db
 
         self.device = None
@@ -22,7 +22,7 @@ class SDRDevice:
 
     def initialize(self):
         self.device = SoapySDR.Device({"driver": self.driver})
-        self.device.setSampleRate(SOAPY_SDR_RX, 0, self.iq_sample_rate)
+        self.device.setSampleRate(SOAPY_SDR_RX, 0, self.iq_sample_rate_hz)
         self.device.setGain(SOAPY_SDR_RX, 0, self.rf_gain_db)
 
     def tune(self, frequency):

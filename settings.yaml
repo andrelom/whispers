@@ -24,7 +24,7 @@ band_frequencies:
 
 # IQ sample rate of the SDR device in Hz.
 # Higher values provide wider bandwidth but increase CPU load and memory usage.
-iq_sample_rate: 2400000
+iq_sample_rate_hz: 2400000
 
 # SDR gain setting in decibels.
 # Adjust based on noise floor and dynamic range requirements.

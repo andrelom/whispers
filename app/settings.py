@@ -22,7 +22,7 @@ class Settings:
 
     # IQ sample rate of the SDR device in Hz.
     # Higher values provide wider bandwidth but increase CPU load and memory usage.
-    iq_sample_rate: int
+    iq_sample_rate_hz: int
 
     # SDR gain setting in decibels.
     # Adjust based on noise floor and dynamic range requirements.
@@ -37,6 +37,6 @@ def get_settings(path: str = "./settings.toml") -> Settings:
         driver=raw.get("driver"),
         band=raw.get("band"),
         band_frequencies=raw.get("band_frequencies"),
-        iq_sample_rate=raw.get("iq_sample_rate"),
+        iq_sample_rate_hz=raw.get("iq_sample_rate_hz"),
         rf_gain_db=raw.get("rf_gain_db"),
     )
