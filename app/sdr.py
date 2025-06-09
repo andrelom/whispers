@@ -13,6 +13,7 @@ from app.core.buffer import CircularIQBuffer
 from app.core.fft import FFTProcessor
 from app.core.peak_tracker import PeakTracker
 from app.core.downconverter import VirtualReceiver
+from app.filters.envelope import is_human_like_envelope
 
 
 logger = logging.getLogger(__name__)
@@ -232,7 +233,7 @@ class WidebandScanner:
             region (dict): Dictionary with 'frequency', 'power_db', 'bandwidth'.
 
         Returns:
-            dict: Capture metadata and IQ data.
+            dict: Capture metadata and IQ data (only if signal is speech-like).
         """
         target_freq = region["frequency"]
         logger.debug(f"Capturing virtual receiver IQ at {target_freq:.0f} Hz")
@@ -249,12 +250,15 @@ class WidebandScanner:
             output_sample_rate=self.narrowband_sample_rate_hz
         )
         narrow_iq = receiver.extract_subband(wide_iq)
+        if not is_human_like_envelope(narrow_iq, self.narrowband_sample_rate_hz):
+            logger.debug("Rejected: envelope does not resemble human speech.")
+            return {}
         return {
             "frequency": target_freq,
             "power_db": region["power_db"],
             "bandwidth": region["bandwidth"],
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sample_rate": self.narrowband_sample_rate,
+            "sample_rate": self.narrowband_sample_rate_hz,
             "iq_data": narrow_iq
         }
 
