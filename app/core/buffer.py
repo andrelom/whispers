@@ -35,3 +35,8 @@ class CircularIQBuffer:
                 self.buffer[start_pos:],
                 self.buffer[:n - first_part]
             ])
+
+    def clear(self):
+        self.buffer[:] = 0
+        self.write_pos = 0
+        self.is_full = False
