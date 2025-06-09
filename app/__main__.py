@@ -60,7 +60,7 @@ def main():
         # Optional: Drain the queue (example).
         while not capture_queue.empty():
             result = capture_queue.get()
-            logger.info(f"Captured: {result.get('frequency', '?')} Hz, "
+            logger.info(f"Captured: {result.get('signal_frequency', '?')} Hz, "
                         f"Power: {result.get('power_db', '?'):.1f} dB, "
                         f"Bandwidth: {result.get('bandwidth', '?')} Hz")
 
