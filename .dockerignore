@@ -1,0 +1,8 @@
+# Ignore everything.
+**
+
+# Allow only what we want to copy in Dockerfile.
+!app/
+!requirements.txt
+!settings.yaml
+!entrypoint.sh

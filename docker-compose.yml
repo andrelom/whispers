@@ -1,0 +1,18 @@
+networks:
+  whispers:
+    driver: bridge
+
+services:
+  #
+  # Whispers
+  # --------------------------------------------------
+  whispers:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: whispers
+    privileged: true
+    networks:
+      - whispers
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
