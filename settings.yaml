@@ -1,6 +1,6 @@
 #
 # SDR System Configuration
-# ──────────────────────────────────────────────────────────────
+# --------------------------------------------------
 
 # SDR driver to use. Example: 'airspy', 'rtlsdr', etc.
 driver: 'airspy'
@@ -44,7 +44,7 @@ narrowband_capture_duration_sec: 1.0
 
 #
 # FFT
-# ──────────────────────────────────────────────────────────────
+# --------------------------------------------------
 
 fft:
   # Threshold offset (in dB) added to the median power level for peak detection.
@@ -57,7 +57,7 @@ fft:
 
 #
 # Peak Stability Tracking
-# ──────────────────────────────────────────────────────────────
+# --------------------------------------------------
 
 peak_tracker:
   # Minimum number of consecutive detections required to confirm a stable peak.
