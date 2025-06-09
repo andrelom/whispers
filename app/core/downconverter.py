@@ -37,6 +37,8 @@ class VirtualReceiver:
         self.freq_offset = target_freq - center_freq
         self.input_sample_rate = input_sample_rate
         self.output_sample_rate = output_sample_rate
+        if output_sample_rate >= input_sample_rate:
+            raise ValueError("Output sample rate must be lower than input sample rate.")
         self.decimation_factor = int(input_sample_rate // output_sample_rate)
 
     def extract_subband(self, iq_block: np.ndarray) -> np.ndarray:
