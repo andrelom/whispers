@@ -2,25 +2,44 @@
 # SDR System Configuration
 # ──────────────────────────────────────────────────────────────
 
+# SDR driver to use. Example: 'airspy', 'rtlsdr', etc.
 driver: 'airspy'
 
+# Target frequency band to scan. Must match a key in 'band_frequencies'.
 band: 'vhf'
 
+# Center frequencies (in Hz) to scan for each supported band.
+# The system will tune to each center frequency and scan for signal peaks.
 band_frequencies:
+  # Amateur HF bands: 40m, 20m, 15m.
   hf: [7100000, 14200000, 21300000]
+  # VHF: APRS, simplex channels.
   vhf: [144390000, 146520000]
+  # UHF: ISM band, simplex.
   uhf: [433920000, 446000000]
 
+# SDR device sample rate for wideband scanning (in Hz).
+# Determines how much spectrum is captured in each scan block.
 iq_sample_rate_hz: 2400000
 
+# RF gain applied to the SDR receiver (in dB).
+# Higher values increase sensitivity but may introduce noise.
 rf_gain_db: 40
 
+# Duration (in seconds) of each wideband scan capture block.
+# This controls how long the system listens before analyzing FFT.
 scan_duration_sec: 0.5
 
+# Minimum bandwidth (in Hz) for a signal to be considered "voice-like".
+# Helps eliminate narrowband digital noise or non-speech signals.
 min_voice_bandwidth_hz: 2000
 
+# Output sample rate (in Hz) for extracted narrowband IQ streams.
+# Determines resolution of captured sub-bands passed to downstream analysis.
 narrowband_sample_rate_hz: 500000
 
+# Duration (in seconds) of narrowband IQ segments to extract.
+# These are extracted from the circular buffer around each stable signal peak.
 narrowband_capture_duration_sec: 1.0
 
 #
@@ -28,8 +47,12 @@ narrowband_capture_duration_sec: 1.0
 # ──────────────────────────────────────────────────────────────
 
 fft:
+  # Threshold offset (in dB) added to the median power level for peak detection.
+  # Higher values reduce false positives by requiring stronger signals.
   threshold_db: 10.0
 
+  # Minimum frequency spacing (in Hz) between adjacent detected peaks.
+  # Helps prevent multiple detections within a single wide signal.
   min_distance_hz: 5000
 
 #
@@ -37,6 +60,10 @@ fft:
 # ──────────────────────────────────────────────────────────────
 
 peak_tracker:
+  # Minimum number of consecutive detections required to confirm a stable peak.
+  # Reduces noise and transient false positives.
   min_hits: 3
 
+  # Time window (in seconds) during which repeated detections must occur.
+  # Peaks are only confirmed if they persist across this interval.
   window_sec: 10
