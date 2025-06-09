@@ -112,12 +112,6 @@ class SDRDevice:
             self.device = None
         logger.info("SDR device closed.")
 
-    def __del__(self):
-        """
-        Destructor to ensure the SDR device is properly closed.
-        """
-        self.close()
-
 
 class WidebandScanner:
     """
@@ -229,7 +223,7 @@ class WidebandScanner:
         else:
             logger.debug("No stable peaks detected.")
 
-    def capture_peak_region(self, region: dict) -> dict:
+    def capture_peak_region(self, region: dict) -> dict | None:
         """
         Extract a narrowband capture centered around a stable detected signal.
 
@@ -248,12 +242,12 @@ class WidebandScanner:
         center_freq = self.sdr_device.center_frequency
         if self.freq_observer.is_continuous(target_freq):
             logger.debug("Rejected: signal appears continuous.")
-            return {}
+            return None
         try:
             wide_iq = self.circular_buffer.extract_recent(self.narrowband_capture_duration_sec)
         except ValueError:
             logger.warning("Insufficient IQ data in buffer, skipping capture.")
-            return {}
+            return None
         receiver = VirtualReceiver(
             center_freq=center_freq,
             target_freq=target_freq,
@@ -263,7 +257,7 @@ class WidebandScanner:
         narrow_iq = receiver.extract_subband(wide_iq)
         if not is_human_like_envelope(narrow_iq, self.narrowband_sample_rate_hz):
             logger.debug("Rejected: envelope does not resemble human speech.")
-            return {}
+            return None
         return {
             "frequency": target_freq,
             "power_db": region["power_db"],
