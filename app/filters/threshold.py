@@ -3,15 +3,17 @@ import numpy as np
 
 class ThresholdPeakDetector:
     """
-    A simple threshold-based peak detection algorithm for FFT magnitude spectra.
+    A robust threshold-based peak detection algorithm for FFT magnitude spectra.
 
-    This detector identifies local peaks that rise above the noise floor by a defined offset
-    (in decibels). It's designed to find strong signals in an FFT output, ignoring noise
-    and minor fluctuations.
+    Improvements:
+    1. Uses noise floor estimation (median) instead of mean for better noise immunity
+    2. Includes endpoint handling for local maxima
+    3. Implements proper non-maximum suppression for peak spacing
+    4. Handles single-point spectra edge cases
 
     Attributes:
         offset_db (float): Power threshold above median noise floor for detection.
-        min_distance_hz (int): Minimum spacing between detected peaks to avoid duplicates.
+        min_distance_hz (int): Minimum frequency spacing (in Hz) between adjacent peaks.
     """
 
     def __init__(self, offset_db=10.0, min_distance_hz=5000):
@@ -19,48 +21,94 @@ class ThresholdPeakDetector:
         Initialize the peak detector.
 
         Args:
-            offset_db (float): Amount (in dB) above the median spectrum level required for a peak.
-            min_distance_hz (int): Minimum frequency spacing (in Hz) between adjacent peaks.
+            offset_db (float): Threshold above median noise floor (in dB).
+            min_distance_hz (int): Minimum spacing between accepted peaks (in Hz).
         """
         self.offset_db = offset_db
         self.min_distance_hz = min_distance_hz
 
     def detect_peaks(self, freqs: np.ndarray, spectrum_db: np.ndarray) -> list[dict]:
         """
-        Detect significant peaks in the FFT magnitude spectrum.
-
-        A peak is defined as:
-        - A local maximum (greater than its neighbors),
-        - Above the computed threshold (median + offset),
-        - Not too close to another previously detected peak.
+        Detect significant peaks in a dB spectrum.
 
         Args:
-            freqs (np.ndarray): Array of frequency bins (in Hz), same length as spectrum.
-            spectrum_db (np.ndarray): Power spectrum in dB, same length as freqs.
+            freqs (np.ndarray): Frequency bin centers in Hz.
+            spectrum_db (np.ndarray): Power values in dB.
 
         Returns:
-            list[dict]: Each dictionary contains:
-                - "frequency": frequency of the peak (Hz)
-                - "power_db": power level at the peak (dB)
+            list[dict]: List of detected peaks with frequency and power.
         """
-        # Dynamic threshold based on median + offset.
-        threshold = np.median(spectrum_db) + self.offset_db
+        # Delegate to full method but discard index if not needed.
+        return [
+            {"frequency": p["frequency"], "power_db": p["power_db"]}
+            for p in self.detect_peaks_with_index(freqs, spectrum_db)
+        ]
+
+    def detect_peaks_with_index(self, freqs: np.ndarray, spectrum_db: np.ndarray) -> list[dict]:
+        """
+        Detect peaks and return results including their FFT bin index.
+
+        Args:
+            freqs (np.ndarray): Frequency bin centers in Hz.
+            spectrum_db (np.ndarray): Power values in dB.
+
+        Returns:
+            list[dict]: Detected peaks including frequency, power, and FFT index.
+        """
+        # Handle empty input case.
+        if len(spectrum_db) == 0:
+            return []
+
+        # Estimate noise floor using robust median.
+        noise_floor = np.median(spectrum_db)
+        threshold = noise_floor + self.offset_db
+
         peaks = []
-        last_freq = None
+        n = len(spectrum_db)
+        candidates = []
 
-        for i in range(1, len(spectrum_db) - 1):
-            # Check for a local maximum above the threshold.
-            if (
-                spectrum_db[i] > threshold
-                and spectrum_db[i] > spectrum_db[i - 1]
-                and spectrum_db[i] > spectrum_db[i + 1]
-            ):
-                freq = freqs[i]
-                power = spectrum_db[i]
+        # Identify candidate peaks as local maxima above threshold.
+        for i in range(n):
+            # Left edge case.
+            if i == 0:
+                if n > 1 and spectrum_db[i] > threshold and spectrum_db[i] > spectrum_db[i + 1]:
+                    candidates.append(i)
+                elif n == 1 and spectrum_db[i] > threshold:
+                    candidates.append(i)
+            # Right edge case.
+            elif i == n - 1:
+                if spectrum_db[i] > threshold and spectrum_db[i] > spectrum_db[i - 1]:
+                    candidates.append(i)
+            # Middle points.
+            else:
+                if (spectrum_db[i] > threshold and
+                    spectrum_db[i] > spectrum_db[i - 1] and
+                    spectrum_db[i] > spectrum_db[i + 1]):
+                    candidates.append(i)
 
-                # Skip peaks that are too close to the previous one.
-                if last_freq is None or abs(freq - last_freq) >= self.min_distance_hz:
-                    peaks.append({"frequency": freq, "power_db": power})
-                    last_freq = freq
+        # Sort by descending power so strongest peaks are prioritized.
+        candidates.sort(key=lambda i: spectrum_db[i], reverse=True)
+        accepted_freqs = []
 
+        # Apply non-maximum suppression by checking min frequency spacing.
+        for i in candidates:
+            freq = freqs[i]
+            power = spectrum_db[i]
+
+            # Reject if too close to a previously accepted peak.
+            too_close = any(
+                abs(freq - accepted_freq) < self.min_distance_hz
+                for accepted_freq in accepted_freqs
+            )
+
+            if not too_close:
+                peaks.append({
+                    "frequency": freq,
+                    "power_db": power,
+                    "index": i  # Include FFT bin index for later use (e.g., bandwidth estimation).
+                })
+                accepted_freqs.append(freq)
+
+        # Sort final output by frequency (ascending) for consistency.
+        peaks.sort(key=lambda p: p["frequency"])
         return peaks

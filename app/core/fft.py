@@ -2,27 +2,19 @@ import numpy as np
 
 from app.filters.threshold import ThresholdPeakDetector
 
-
 class FFTProcessor:
     """
-    FFTProcessor handles spectral analysis on IQ data using the Fast Fourier Transform (FFT).
-
-    It computes the power spectrum in dB, detects peaks using a configurable threshold detector,
-    and estimates the frequency, power, and bandwidth of each detected signal.
-
-    Attributes:
-        sample_rate (float): Sample rate of the IQ input stream in Hz.
-        detector (ThresholdPeakDetector): Peak detection strategy (configurable).
+    Processes complex IQ samples using FFT to detect and characterize spectral peaks.
     """
 
     def __init__(self, sample_rate: float, threshold_db=10.0, min_distance_hz=5000):
         """
-        Initialize the FFT processor.
+        Initializes the FFT processor and peak detector.
 
         Args:
-            sample_rate (float): Sample rate of the incoming IQ data (Hz).
-            threshold_db (float): Threshold (in dB) above noise floor for detecting peaks.
-            min_distance_hz (int): Minimum spacing (Hz) between adjacent detected peaks.
+            sample_rate (float): Sampling rate of the IQ signal in Hz.
+            threshold_db (float): dB threshold above the noise floor for peak detection.
+            min_distance_hz (int): Minimum frequency spacing between detected peaks.
         """
         self.sample_rate = sample_rate
         self.detector = ThresholdPeakDetector(
@@ -32,67 +24,109 @@ class FFTProcessor:
 
     def compute_fft_db(self, iq_block: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """
-        Compute FFT of the IQ block and convert to decibel (dB) scale.
-
-        Applies a Hann window to reduce spectral leakage.
+        Computes the FFT and returns frequency bins and power spectrum in dB.
 
         Args:
-            iq_block (np.ndarray): Input complex64 IQ samples.
+            iq_block (np.ndarray): Complex input samples.
 
         Returns:
-            tuple:
-                - freqs (np.ndarray): Frequency bins in Hz (centered around 0).
-                - spectrum_db (np.ndarray): Power spectrum in dB.
+            tuple: (frequency bins in Hz, power spectrum in dB)
         """
         n = len(iq_block)
 
-        # Apply Hann window to reduce leakage.
+        # Apply Hann window to reduce spectral leakage.
         window = np.hanning(n)
         iq_windowed = iq_block * window
 
-        # Compute FFT and shift zero frequency to center.
+        # Compute FFT and shift zero-frequency component to center.
         fft = np.fft.fftshift(np.fft.fft(iq_windowed))
 
-        # Convert to dB scale.
+        # Convert magnitude to dB scale, adding epsilon to avoid log(0).
         magnitude = np.abs(fft)
-        spectrum_db = 20 * np.log10(magnitude + 1e-10)  # Small epsilon to avoid log(0).
+        spectrum_db = 20 * np.log10(magnitude + 1e-10)
 
-        # Generate corresponding frequency bins.
+        # Compute corresponding frequency bins.
         freqs = np.fft.fftshift(np.fft.fftfreq(n, d=1 / self.sample_rate))
-
         return freqs, spectrum_db
 
     def extract_peak_regions(self, iq_block: np.ndarray) -> list[dict]:
         """
-        Analyze an IQ block to detect frequency regions with significant energy (peaks).
+        Identifies spectral peaks and estimates bandwidth around them.
 
         Args:
-            iq_block (np.ndarray): Complex IQ samples.
+            iq_block (np.ndarray): Complex input samples.
 
         Returns:
-            list[dict]: Each dictionary includes:
-                - "frequency" (float): Center frequency of the peak (Hz).
-                - "power_db" (float): Power level at the peak (dB).
-                - "index" (int): Index in the FFT array.
-                - "bandwidth" (float): Estimated signal width (Hz).
+            list[dict]: List of peak information including frequency, power, index, and bandwidth.
         """
+        # Compute FFT and power spectrum.
         freqs, spectrum_db = self.compute_fft_db(iq_block)
-        peaks = self.detector.detect_peaks(freqs, spectrum_db)
+        n = len(freqs)
+
+        # Calculate frequency resolution (Hz per FFT bin).
+        bin_width = abs(freqs[1] - freqs[0])
+
+        # Detect peaks and retrieve their FFT bin indices.
+        peaks = self.detector.detect_peaks_with_index(freqs, spectrum_db)
 
         results = []
-        n = len(freqs)
-        fft_resolution_hz = self.sample_rate / n  # Hz per FFT bin.
-
         for peak in peaks:
-            freq = peak["frequency"]
-            index = np.argmin(np.abs(freqs - freq))  # Closest bin.
-            bandwidth = max(self.detector.min_distance_hz, fft_resolution_hz * 10)
+            idx = peak["index"]
+            center_freq = freqs[idx]
+
+            # Estimate signal bandwidth around the peak using 3dB drop method.
+            bw = self._estimate_3db_bandwidth(
+                spectrum_db,
+                idx,
+                bin_width,
+                search_window=int(0.5 * self.detector.min_distance_hz / bin_width)
+            )
 
             results.append({
-                "frequency": freq,
+                "frequency": center_freq,
                 "power_db": peak["power_db"],
-                "index": index,
-                "bandwidth": bandwidth,
+                "index": idx,
+                "bandwidth": bw,
             })
 
         return results
+
+    def _estimate_3db_bandwidth(
+        self,
+        spectrum_db: np.ndarray,
+        peak_idx: int,
+        bin_width: float,
+        search_window: int
+    ) -> float:
+        """
+        Estimates the 3dB bandwidth of a signal around a given peak.
+
+        Args:
+            spectrum_db (np.ndarray): Power spectrum in dB.
+            peak_idx (int): Index of the peak in the spectrum.
+            bin_width (float): Frequency width per FFT bin in Hz.
+            search_window (int): Max number of bins to search on either side of the peak.
+
+        Returns:
+            float: Estimated bandwidth in Hz.
+        """
+        peak_power = spectrum_db[peak_idx]
+        threshold = peak_power - 3  # 3dB down from the peak.
+        n = len(spectrum_db)
+
+        # Search left for the -3dB point.
+        left = peak_idx
+        for i in range(max(0, peak_idx - search_window), peak_idx):
+            if spectrum_db[i] < threshold:
+                left = i
+                break
+
+        # Search right for the -3dB point.
+        right = peak_idx
+        for i in range(peak_idx + 1, min(n, peak_idx + search_window + 1)):
+            if spectrum_db[i] < threshold:
+                right = i
+                break
+
+        # Convert bin span to Hz.
+        return (right - left) * bin_width

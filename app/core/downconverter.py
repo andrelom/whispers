@@ -4,18 +4,9 @@ import scipy.signal
 
 class VirtualReceiver:
     """
-    VirtualReceiver extracts a narrowband signal from a wideband IQ stream using
-    digital downconversion (frequency shifting and decimation).
-
-    This avoids the need to physically retune the SDR. Instead, it digitally shifts
-    the desired frequency to baseband (0 Hz) and reduces the sample rate to isolate
-    the signal of interest.
-
-    Attributes:
-        freq_offset (float): Frequency shift to bring target to baseband.
-        input_sample_rate (float): Original sample rate of wideband IQ data.
-        output_sample_rate (float): Desired sample rate for narrowband output.
-        decimation_factor (int): Integer factor by which to reduce the sample rate.
+    Extracts a narrowband sub-channel from a wideband IQ stream using digital downconversion,
+    anti-aliasing filtering, and resampling. Suitable for use in SDR applications where
+    multiple virtual receivers operate on a shared wideband buffer.
     """
 
     def __init__(
@@ -29,41 +20,59 @@ class VirtualReceiver:
         Initialize the virtual receiver.
 
         Args:
-            center_freq (float): The current center frequency of the SDR (Hz).
-            target_freq (float): The frequency of the signal to extract (Hz).
-            input_sample_rate (float): Sample rate of the wideband IQ stream (Hz).
-            output_sample_rate (float): Desired narrowband sample rate (Hz).
+            center_freq (float): The center frequency of the wideband IQ data (Hz).
+            target_freq (float): The frequency to tune to within the wideband signal (Hz).
+            input_sample_rate (float): The sample rate of the wideband IQ stream (Hz).
+            output_sample_rate (float): The desired output sample rate for the subband (Hz).
         """
+        # Frequency offset between the desired subband and the wideband center.
         self.freq_offset = target_freq - center_freq
+
         self.input_sample_rate = input_sample_rate
         self.output_sample_rate = output_sample_rate
-        if output_sample_rate >= input_sample_rate:
-            raise ValueError("Output sample rate must be lower than input sample rate.")
-        self.decimation_factor = int(input_sample_rate // output_sample_rate)
+
+        # Compute decimation factor (must be >= 1 for downsampling).
+        self.decimation_factor = input_sample_rate / output_sample_rate
+
+        # Validate that we're not attempting to upsample.
+        if self.decimation_factor < 1:
+            raise ValueError("Output sample rate must be lower than input sample rate")
+
+        # Design a low-pass FIR filter to suppress aliasing before decimation.
+        nyquist = output_sample_rate / 2  # Output Nyquist frequency.
+        self.taps = scipy.signal.firwin(
+            numtaps=101,                # Filter length (number of taps).
+            cutoff=0.9 * nyquist,       # Cutoff frequency with 10% guard band.
+            fs=input_sample_rate        # Filter is defined in terms of input sample rate.
+        )
 
     def extract_subband(self, iq_block: np.ndarray) -> np.ndarray:
         """
-        Perform digital downconversion to isolate the signal near target_freq.
-
-        This includes:
-        1. Mixing (frequency shift): Brings target signal to baseband (0 Hz).
-        2. Decimation (downsampling): Reduces bandwidth and sample rate.
+        Extract and downconvert a narrowband signal centered at the target frequency.
 
         Args:
-            iq_block (np.ndarray): Wideband IQ block (complex64 array).
+            iq_block (np.ndarray): Input wideband complex IQ samples.
 
         Returns:
-            np.ndarray: Narrowband IQ stream centered at 0 Hz, complex64.
+            np.ndarray: Downconverted and resampled narrowband complex IQ samples.
         """
         n = len(iq_block)
 
-        # Generate time vector in seconds.
-        t = np.arange(n) / self.input_sample_rate
+        # Step 1: Mix (frequency shift) to baseband using a complex exponential.
+        phase = 2 * np.pi * self.freq_offset / self.input_sample_rate
+        mixer = np.exp(-1j * phase * np.arange(n))  # Efficient phase accumulator.
+        mixed = iq_block * mixer  # Shift target frequency to 0 Hz.
 
-        # Mix (shift) the target frequency to 0 Hz.
-        mixed = iq_block * np.exp(-1j * 2 * np.pi * self.freq_offset * t)
+        # Step 2: Apply anti-aliasing FIR filter before resampling.
+        filtered = scipy.signal.lfilter(self.taps, 1.0, mixed)
 
-        # Decimate to reduce bandwidth (and data size).
-        filtered = scipy.signal.decimate(mixed, self.decimation_factor, ftype='fir', zero_phase=True)
+        # Step 3: Perform rational resampling to convert to output sample rate.
+        resampled = scipy.signal.resample_poly(
+            filtered,
+            up=1,
+            down=int(np.round(self.decimation_factor)),  # Integer approximation of decimation.
+            window=('kaiser', 5.0)  # Kaiser window improves stopband performance.
+        )
 
-        return filtered.astype(np.complex64)
+        # Return result as complex64 for memory efficiency and SDR compatibility.
+        return resampled.astype(np.complex64)

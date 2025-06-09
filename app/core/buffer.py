@@ -3,95 +3,109 @@ import numpy as np
 
 class CircularIQBuffer:
     """
-    Circular (ring) buffer for storing IQ samples in memory.
+    Circular buffer to store complex IQ samples with efficient support for overwrite,
+    wrap-around handling, and recent-data extraction.
 
-    This buffer is designed to continuously hold the most recent window of IQ data,
-    enabling retrospective access to past samples. It's especially useful when performing
-    signal detection on streaming data, where you want to "go back in time" and extract
-    a segment centered on a detected event (e.g., voice signal).
-
-    Attributes:
-        sample_rate (int): Number of IQ samples per second (Hz).
-        buffer_size (int): Total number of complex samples stored.
-        buffer (np.ndarray): Internal memory array for IQ data.
-        write_pos (int): Current write position (wraps around).
-        is_full (bool): Indicates if the buffer has wrapped at least once.
+    Suitable for high-throughput SDR (Software Defined Radio) applications where continuous
+    data streams must be buffered for retrospective access or processing.
     """
 
     def __init__(self, sample_rate: float, duration_sec: float = 30.0):
         """
-        Initialize the circular buffer.
+        Initialize the buffer with a fixed duration and sampling rate.
 
         Args:
-            sample_rate (float): IQ sample rate in Hz.
-            duration_sec (float): Total duration (in seconds) of IQ data to retain.
+            sample_rate (float): Samples per second (Hz).
+            duration_sec (float): Total duration of buffer storage in seconds.
         """
         self.sample_rate = int(sample_rate)
         self.buffer_size = int(self.sample_rate * duration_sec)
+
+        # Allocate zero-filled complex buffer.
         self.buffer = np.zeros(self.buffer_size, dtype=np.complex64)
+
+        # Points to the write head (wraps around).
         self.write_pos = 0
-        self.is_full = False
+
+        # Number of valid samples currently stored.
+        self.available = 0
 
     def append(self, iq_block: np.ndarray):
         """
-        Append a new block of IQ samples to the buffer.
+        Append a new block of IQ samples into the buffer.
+
+        Oldest samples are overwritten if buffer overflows.
 
         Args:
-            iq_block (np.ndarray): Array of complex64 IQ samples to store.
+            iq_block (np.ndarray): Complex64 numpy array of new samples.
         """
         n = len(iq_block)
-        end_pos = self.write_pos + n
+        if n == 0:
+            return
 
-        if end_pos <= self.buffer_size:
-            # Fits without wrapping.
-            self.buffer[self.write_pos:end_pos] = iq_block
+        # If block is larger than buffer, keep only the most recent part.
+        if n > self.buffer_size:
+            iq_block = iq_block[-self.buffer_size:]
+            n = self.buffer_size
+            self.available = self.buffer_size
+            self.write_pos = 0
+
+        # Compute where new data will start writing.
+        start_pos = (self.write_pos + self.available) % self.buffer_size
+        end_pos = (start_pos + n) % self.buffer_size
+
+        # Case 1: Data fits without wrapping.
+        if start_pos + n <= self.buffer_size:
+            self.buffer[start_pos:start_pos + n] = iq_block
+        # Case 2: Data wraps around to beginning.
         else:
-            # Wraps around end of buffer.
-            first_part = self.buffer_size - self.write_pos
-            self.buffer[self.write_pos:] = iq_block[:first_part]
-            self.buffer[:n - first_part] = iq_block[first_part:]
+            first_part = self.buffer_size - start_pos
+            second_part = n - first_part
+            self.buffer[start_pos:] = iq_block[:first_part]
+            self.buffer[:second_part] = iq_block[first_part:]
 
-        self.write_pos = (self.write_pos + n) % self.buffer_size
-
-        # Mark buffer as "full" after one full cycle.
-        if not self.is_full and self.write_pos == 0:
-            self.is_full = True
+        # Update buffer state.
+        self.available = min(self.available + n, self.buffer_size)
+        self.write_pos = end_pos
 
     def extract_recent(self, duration_sec: float) -> np.ndarray:
         """
-        Extract the most recent IQ samples from the buffer.
+        Extract the most recent samples from the buffer.
 
         Args:
-            duration_sec (float): Duration (in seconds) of samples to retrieve.
+            duration_sec (float): How many seconds of samples to extract.
 
         Returns:
-            np.ndarray: Complex64 array of IQ data, most recent first.
-
-        Raises:
-            ValueError: If not enough data has been buffered yet.
+            np.ndarray: Complex64 array of recent samples.
         """
-        n = int(self.sample_rate * duration_sec)
+        # Determine how many samples to extract.
+        n = min(
+            int(self.sample_rate * duration_sec),
+            self.available
+        )
 
-        if not self.is_full and self.write_pos < n:
-            raise ValueError("Not enough data in buffer yet")
+        if n <= 0:
+            return np.array([], dtype=np.complex64)
 
-        start_pos = (self.write_pos - n) % self.buffer_size
+        # Calculate the start position of the desired window.
+        start_pos = (self.write_pos + self.available - n) % self.buffer_size
 
+        # Case 1: Data is contiguous.
         if start_pos + n <= self.buffer_size:
-            # Continuous block.
-            return np.copy(self.buffer[start_pos:start_pos + n])
-        else:
-            # Wrapped block: needs stitching from end and beginning.
-            first_part = self.buffer_size - start_pos
-            return np.concatenate([
-                self.buffer[start_pos:],
-                self.buffer[:n - first_part]
-            ])
+            return self.buffer[start_pos:start_pos + n].copy()
+
+        # Case 2: Data wraps around.
+        first_part = self.buffer_size - start_pos
+        second_part = n - first_part
+        return np.concatenate([
+            self.buffer[start_pos:],
+            self.buffer[:second_part]
+        ])
 
     def clear(self):
         """
-        Clear the buffer contents and reset the write position.
+        Clear the buffer content and reset state.
         """
         self.buffer[:] = 0
         self.write_pos = 0
-        self.is_full = False
+        self.available = 0
