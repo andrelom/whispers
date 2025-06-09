@@ -272,12 +272,3 @@ class WidebandScanner:
             "sample_rate": self.narrowband_sample_rate_hz,
             "iq_data": narrow_iq
         }
-
-    def get_queue(self):
-        """
-        Returns the queue where captures are being placed.
-
-        Returns:
-            AbstractCaptureQueue: Capture queue used for downstream processing.
-        """
-        return self.capture_queue
