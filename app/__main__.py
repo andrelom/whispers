@@ -1,5 +1,7 @@
-import logging
 import time
+import signal
+import threading
+import logging
 
 from app.settings import get_settings
 from app.sdr import SDRDevice, WidebandScanner
@@ -8,9 +10,21 @@ from app.core.queue import InMemoryCaptureQueue
 
 logger = logging.getLogger(__name__)
 
+# Global event to coordinate shutdown.
+shutdown_event = threading.Event()
+
+
+def handle_signal(signum, frame):
+    logger.info(f"Signal {signum} received, shutting down...")
+    shutdown_event.set()
+
 
 def main():
     logger.info("Starting Whispers SDR pipeline...")
+
+    # Register signal handlers for SIGINT (Ctrl+C), SIGTERM (docker stop).
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
 
     # Load settings.
     settings = get_settings()
@@ -23,10 +37,18 @@ def main():
     scanner = WidebandScanner(sdr_device, capture_queue, settings)
 
     try:
-        scanner.start()
-    except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received, stopping scanner...")
+        # Run scanner in thread so it can be stopped cleanly.
+        thread = threading.Thread(target=scanner.start)
+        thread.start()
+
+        # Wait for shutdown signal.
+        while not shutdown_event.is_set():
+            time.sleep(0.5)
+
+        logger.info("Shutdown event set, stopping scanner...")
         scanner.stop()
+        thread.join()
+
     except Exception as e:
         logger.exception(f"Unexpected error occurred: {e}")
     finally:
