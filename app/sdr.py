@@ -189,10 +189,12 @@ class WidebandScanner:
         """
         Stop scanning and clean up all internal state.
         """
+        if not self.running:
+            return
+        self.running = False
         self.sdr_device.close()
         self.circular_buffer.clear()
         self.peak_tracker.clear()
-        self.running = False
 
     def get_band_centers(self):
         """
