@@ -48,6 +48,7 @@ class SDRDevice:
         self.device = SoapySDR.Device({"driver": self.driver})
         self.device.setSampleRate(SOAPY_SDR_RX, 0, self.iq_sample_rate_hz)
         self.device.setGain(SOAPY_SDR_RX, 0, self.rf_gain_db)
+        logger.info(f"SDR device initialized.")
 
     def tune(self, frequency):
         """
