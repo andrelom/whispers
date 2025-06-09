@@ -105,7 +105,7 @@ class ThresholdPeakDetector:
                 peaks.append({
                     "frequency": freq,
                     "power_db": power,
-                    "index": i  # Include FFT bin index for later use (e.g., bandwidth estimation).
+                    "index": i # Include FFT bin index for later use (e.g., bandwidth estimation).
                 })
                 accepted_freqs.append(freq)
 
