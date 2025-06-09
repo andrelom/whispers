@@ -65,7 +65,7 @@ def get_settings(path: str = "./settings.yaml") -> Settings:
     scan_duration_sec = _require(raw, "scan_duration_sec", (int, float))
     min_voice_bandwidth_hz = _require(raw, "min_voice_bandwidth_hz", int)
     narrowband_sample_rate_hz = _require(raw, "narrowband_sample_rate_hz", int)
-    narrowband_capture_duration_sec = _require(raw, "narrowband_capture_duration_sec", int)
+    narrowband_capture_duration_sec = _require(raw, "narrowband_capture_duration_sec", (int, float))
 
     # Validate FFT settings.
     fft = raw.get("fft", {})
