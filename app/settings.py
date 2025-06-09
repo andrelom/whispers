@@ -29,7 +29,16 @@ class Settings:
     peak_tracker: PeakTrackerSettings = field(default_factory=PeakTrackerSettings)
 
 @lru_cache(maxsize=1)
-def get_settings(path: str = "./settings.toml") -> Settings:
+def get_settings(path: str = "./settings.yaml") -> Settings:
+    """
+    Load system configuration from a YAML file and cache the result.
+
+    Args:
+        path (str): Path to the configuration file. Default is './settings.yaml'.
+
+    Returns:
+        Settings: Fully parsed and validated configuration object.
+    """
     with open(path, "r") as f:
         raw = yaml.safe_load(f) or {}
 

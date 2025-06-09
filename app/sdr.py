@@ -19,7 +19,19 @@ logger = logging.getLogger(__name__)
 
 
 class SDRDevice:
+    """
+    Represents a physical Software Defined Radio (SDR) device using SoapySDR.
+
+    Handles initialization, tuning, streaming, and sample capture.
+    """
+
     def __init__(self, settings: Settings):
+        """
+        Initialize the SDRDevice with configuration settings.
+
+        Args:
+            settings (Settings): Global configuration loaded from YAML/TOML.
+        """
         self.driver = settings.driver
         self.iq_sample_rate_hz = settings.iq_sample_rate_hz
         self.rf_gain_db = settings.rf_gain_db
@@ -29,21 +41,37 @@ class SDRDevice:
         self.center_frequency = 0.0
 
     def initialize(self):
+        """
+        Connect and configure the SDR hardware.
+        Sets sample rate and RF gain.
+        """
         self.device = SoapySDR.Device({"driver": self.driver})
         self.device.setSampleRate(SOAPY_SDR_RX, 0, self.iq_sample_rate_hz)
         self.device.setGain(SOAPY_SDR_RX, 0, self.rf_gain_db)
 
     def tune(self, frequency):
+        """
+        Tune the SDR to a given center frequency.
+
+        Args:
+            frequency (float): Frequency in Hz.
+        """
         self.center_frequency = frequency
         self.device.setFrequency(SOAPY_SDR_RX, 0, frequency)
 
     def start_stream(self):
+        """
+        Start the SDR streaming if not already active.
+        """
         if self.stream:
             return
         self.stream = self.device.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CF32)
         self.device.activateStream(self.stream)
 
     def stop_stream(self):
+        """
+        Stop and clean up the SDR stream.
+        """
         if not self.stream:
             return
         self.device.deactivateStream(self.stream)
@@ -51,6 +79,15 @@ class SDRDevice:
         self.stream = None
 
     def capture_samples(self, num_samples):
+        """
+        Capture a block of IQ samples from the SDR.
+
+        Args:
+            num_samples (int): Number of complex samples to capture.
+
+        Returns:
+            np.ndarray: Captured IQ samples as complex64.
+        """
         buffer = np.empty(num_samples, dtype=np.complex64)
         received = 0
         while received < num_samples:
@@ -62,6 +99,9 @@ class SDRDevice:
         return buffer
 
     def close(self):
+        """
+        Safely shut down the SDR device and release resources.
+        """
         if self.stream:
             self.stop_stream()
         if self.device:
@@ -70,11 +110,29 @@ class SDRDevice:
         logger.info("SDR device closed.")
 
     def __del__(self):
+        """
+        Destructor to ensure the SDR device is properly closed.
+        """
         self.close()
 
 
 class WidebandScanner:
+    """
+    Controls wideband scanning over a range of center frequencies.
+
+    Captures IQ data, performs FFT-based peak detection, tracks stable signals,
+    and extracts narrowband captures around those signals using virtual receivers.
+    """
+
     def __init__(self, sdr_device: SDRDevice, capture_queue: AbstractCaptureQueue, settings: Settings):
+        """
+        Initialize the scanning system and its parameters.
+
+        Args:
+            sdr_device (SDRDevice): Physical SDR device wrapper.
+            capture_queue (AbstractCaptureQueue): Queue to store output captures.
+            settings (Settings): Loaded configuration object.
+        """
         self.sdr_device = sdr_device
         self.capture_queue = capture_queue
 
@@ -93,10 +151,15 @@ class WidebandScanner:
 
         self.running = False
         self.circular_buffer = CircularIQBuffer(sample_rate=self.sdr_device.iq_sample_rate_hz, duration_sec=30.0)
-        self.fft = FFTProcessor(self.sdr_device.iq_sample_rate_hz, fft_threshold_db, fft_min_distance_hz)
-        self.peak_tracker = PeakTracker(min_hits=peak_min_hits, window_sec=peak_window_sec)
+        self.fft = FFTProcessor(self.sdr_device.iq_sample_rate_hz, self.fft_threshold_db, self.fft_min_distance_hz)
+        self.peak_tracker = PeakTracker(min_hits=self.peak_min_hits, window_sec=self.peak_window_sec)
 
     def start(self):
+        """
+        Begin scanning loop over all configured center frequencies.
+
+        Captures wideband IQ, tracks signal activity, and dispatches narrowband subbands to queue.
+        """
         self.running = True
         self.sdr_device.initialize()
         sample_rate = int(self.sdr_device.iq_sample_rate_hz)
@@ -122,15 +185,30 @@ class WidebandScanner:
             self.stop()
 
     def stop(self):
+        """
+        Stop scanning and clean up all internal state.
+        """
         self.sdr_device.close()
         self.circular_buffer.clear()
         self.peak_tracker.clear()
         self.running = False
 
     def get_band_centers(self):
+        """
+        Get the list of center frequencies for the selected band.
+
+        Returns:
+            list[float]: Frequencies in Hz.
+        """
         return self.band_frequencies.get(self.band, [self.sdr_device.center_frequency])
 
     def handle_iq_block(self, iq_block: np.ndarray):
+        """
+        Process a captured IQ block: perform FFT, filter peaks, track stability, capture stable signals.
+
+        Args:
+            iq_block (np.ndarray): Complex IQ samples.
+        """
         regions = self.fft.extract_peak_regions(iq_block)
         filtered = [r for r in regions if r["bandwidth"] >= self.min_voice_bandwidth_hz]
         stable = self.peak_tracker.update_and_filter(filtered)
@@ -144,6 +222,15 @@ class WidebandScanner:
             logger.debug("No stable peaks detected.")
 
     def capture_peak_region(self, region: dict) -> dict:
+        """
+        Extract a narrowband capture centered around a stable detected signal.
+
+        Args:
+            region (dict): Dictionary with 'frequency', 'power_db', 'bandwidth'.
+
+        Returns:
+            dict: Capture metadata and IQ data.
+        """
         target_freq = region["frequency"]
         logger.debug(f"Capturing virtual receiver IQ at {target_freq:.0f} Hz")
         center_freq = self.sdr_device.center_frequency
@@ -169,4 +256,10 @@ class WidebandScanner:
         }
 
     def get_queue(self):
+        """
+        Returns the queue where captures are being placed.
+
+        Returns:
+            AbstractCaptureQueue: Capture queue used for downstream processing.
+        """
         return self.capture_queue
