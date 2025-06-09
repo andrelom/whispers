@@ -55,4 +55,7 @@ COPY . .
 # Install Python requirements.
 RUN pip3 install --no-cache-dir -r ./requirements.txt
 
+# Set executable permissions for the entrypoint script.
+RUN chmod +x ./entrypoint.sh
+
 ENTRYPOINT ["./entrypoint.sh"]
