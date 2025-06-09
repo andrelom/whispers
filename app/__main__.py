@@ -43,6 +43,9 @@ def main():
 
         # Wait for shutdown signal.
         while not shutdown_event.is_set():
+            if not thread.is_alive():
+                logger.error("Scanner thread exited unexpectedly.")
+                shutdown_event.set()
             time.sleep(0.5)
 
         logger.info("Shutdown event set, stopping scanner...")
