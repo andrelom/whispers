@@ -13,6 +13,7 @@ from app.core.buffer import CircularIQBuffer
 from app.core.fft import FFTProcessor
 from app.core.peak_tracker import PeakTracker
 from app.core.downconverter import VirtualReceiver
+from app.core.frequency_observer import FrequencyObserver
 from app.filters.envelope import is_human_like_envelope
 
 
@@ -155,6 +156,7 @@ class WidebandScanner:
         self.circular_buffer = CircularIQBuffer(sample_rate=self.sdr_device.iq_sample_rate_hz, duration_sec=30.0)
         self.fft = FFTProcessor(self.sdr_device.iq_sample_rate_hz, self.fft_threshold_db, self.fft_min_distance_hz)
         self.peak_tracker = PeakTracker(min_hits=self.peak_min_hits, window_sec=self.peak_window_sec)
+        self.freq_observer = FrequencyObserver(window_sec=30)
 
     def start(self):
         """
@@ -219,15 +221,21 @@ class WidebandScanner:
         if stable:
             logger.debug(f"Total of {len(stable)} stable region(s) confirmed:")
             for region in stable:
+                self.freq_observer.update(region["frequency"], region["power_db"])
                 logger.debug(f"  - Freq: {region['frequency']:.0f} Hz | Power: {region['power_db']:.1f} dB | BW ~{region['bandwidth']:.0f} Hz")
                 result = self.capture_peak_region(region)
-                self.capture_queue.put(result)
+                if result:
+                    self.capture_queue.put(result)
         else:
             logger.debug("No stable peaks detected.")
 
     def capture_peak_region(self, region: dict) -> dict:
         """
         Extract a narrowband capture centered around a stable detected signal.
+
+        Applies:
+        - Frequency observer check (to reject continuous carriers/music)
+        - Envelope analysis (to favor human speech burstiness)
 
         Args:
             region (dict): Dictionary with 'frequency', 'power_db', 'bandwidth'.
@@ -238,6 +246,9 @@ class WidebandScanner:
         target_freq = region["frequency"]
         logger.debug(f"Capturing virtual receiver IQ at {target_freq:.0f} Hz")
         center_freq = self.sdr_device.center_frequency
+        if self.freq_observer.is_continuous(target_freq):
+            logger.debug("Rejected: signal appears continuous.")
+            return {}
         try:
             wide_iq = self.circular_buffer.extract_recent(self.narrowband_capture_duration_sec)
         except ValueError:
