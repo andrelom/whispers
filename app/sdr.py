@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import SoapySDR
 
+from datetime import datetime, timezone
 from SoapySDR import SOAPY_SDR_RX, SOAPY_SDR_CF32
 
 from app.settings import Settings
@@ -112,8 +113,8 @@ class WidebandScanner:
                     self.circular_buffer.append(iq_block)
                     self.handle_iq_block(iq_block)
                     elapsed = time.perf_counter() - start
-                    if elapsed < self.duration:
-                        time.sleep(self.duration - elapsed)
+                    if elapsed < self.scan_duration_sec:
+                        time.sleep(self.scan_duration_sec - elapsed)
                     self.sdr_device.stop_stream()
         except Exception as e:
             logger.error(f"Error starting wideband scanner: {e}")
@@ -145,7 +146,7 @@ class WidebandScanner:
     def capture_peak_region(self, region: dict) -> dict:
         target_freq = region["frequency"]
         logger.debug(f"Capturing virtual receiver IQ at {target_freq:.0f} Hz")
-        center_freq = self.sdr.center_frequency
+        center_freq = self.sdr_device.center_frequency
         try:
             wide_iq = self.circular_buffer.extract_recent(self.narrowband_capture_duration_sec)
         except ValueError:
