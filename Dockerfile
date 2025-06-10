@@ -5,7 +5,7 @@ FROM ubuntu:22.04 AS main
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies for building SoapySDR and SoapyAirspy,
+# Install dependencies for building the application,
 # as well as Python 3 and pip.
 RUN apt-get update && \
   apt-get install -y --no-install-recommends \
@@ -27,7 +27,7 @@ RUN apt-get update && \
   python3-numpy && \
   apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install SoapySDR and SoapyAirspy.
+# Install SoapySDR core library.
 RUN git clone --depth=1 https://github.com/pothosware/SoapySDR.git && \
   cd SoapySDR && \
   mkdir build && cd build && \
@@ -37,7 +37,7 @@ RUN git clone --depth=1 https://github.com/pothosware/SoapySDR.git && \
   ldconfig && \
   cd ../.. && rm -rf SoapySDR
 
-# Install SoapyAirspy.
+# Install SoapyAirspy support.
 RUN git clone --depth=1 https://github.com/pothosware/SoapyAirspy.git && \
   cd SoapyAirspy && \
   mkdir build && cd build && \
@@ -46,6 +46,26 @@ RUN git clone --depth=1 https://github.com/pothosware/SoapyAirspy.git && \
   make install && \
   ldconfig && \
   cd ../.. && rm -rf SoapyAirspy
+
+# Install RTL-SDR core library.
+RUN git clone --depth=1 https://github.com/osmocom/rtl-sdr.git && \
+  cd rtl-sdr && \
+  mkdir build && cd build && \
+  cmake .. -DINSTALL_UDEV_RULES=ON -DDETACH_KERNEL_DRIVER=ON && \
+  make -j"$(nproc)" && \
+  make install && \
+  ldconfig && \
+  cd ../.. && rm -rf rtl-sdr
+
+# Install SoapyRTLSDR support.
+RUN git clone --depth=1 https://github.com/pothosware/SoapyRTLSDR.git && \
+  cd SoapyRTLSDR && \
+  mkdir build && cd build && \
+  cmake .. && \
+  make -j"$(nproc)" && \
+  make install && \
+  ldconfig && \
+  cd ../.. && rm -rf SoapyRTLSDR
 
 WORKDIR /whispers
 
